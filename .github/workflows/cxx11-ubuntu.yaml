@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: ubuntu
+  build_native:
+    name: ubuntu (x86_64)
     runs-on: ubuntu-20.04
 
     steps:
@@ -19,6 +19,37 @@ jobs:
         mkdir _build && cd _build
         cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON
     - name: build
-      run: cd _build && cmake --build ./
+      run: cd _build && cmake --build ./ -j $(nproc)
     - name: test
       run: cd _build && ctest --extra-verbose
+  build_qemu:
+    name: ubuntu (${{ matrix.arch }})
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+          - arch: riscv64
+          - arch: s390x
+          - arch: ppc64le
+
+    steps:
+    - name: setup docker
+      run: |
+        sudo python3 -c 'import json;a=open("/etc/docker/daemon.json","r+");b=json.load(a);b["ipv6"]=True;b["fixed-cidr-v6"]="2001:db8:1::/64";a.truncate(0);a.seek(0);json.dump(b,a)'
+        sudo systemctl restart docker
+    - uses: actions/checkout@v3
+    - uses: uraimo/run-on-arch-action@v2
+      name: run on ${{ matrix.arch }}
+      with:
+        arch: ${{ matrix.arch }}
+        distro: ubuntu20.04
+        install: |
+          apt-get -qq update
+          apt-get -qq -y install cmake build-essential libssl-dev git python3 iproute2
+        run: |
+          set -x
+          mkdir _build && cd _build
+          cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON
+          cmake --build ./ -j $(nproc)
+          ctest --extra-verbose
